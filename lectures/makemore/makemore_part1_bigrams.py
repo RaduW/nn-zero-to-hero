@@ -6,10 +6,13 @@ app = marimo.App(width="medium")
 
 @app.cell
 def imports():
-    import torch
     import matplotlib.pyplot as plt
     import marimo as mo
-    return mo, plt, torch
+    from itertools import islice
+
+    import torch
+    import torch.nn.functional as F
+    return F, islice, mo, plt, torch
 
 
 @app.cell
@@ -35,23 +38,26 @@ def load_words():
 def load_frequencies(stoi, torch, words):
     def load_frequencies(words: list[str])->torch.Tensor:
         n = torch.zeros((28,28), dtype=torch.int32)
+        for bigram in create_bigrams(words):
+            idx0 = stoi[bigram[0]]
+            idx1 = stoi[bigram[1]]
+            n[idx0,idx1] += 1
+        return n
+
+    def create_bigrams(words: list[str]):
         for word in words:
             w0 = '.' + word
             w1 = word + '.'
             digrams = zip(w0,w1 )
-            for d in digrams:
-                idx0 = stoi[d[0]]
-                idx1 = stoi[d[1]]
-                n[idx0, idx1] += 1
-        return n
-
+            yield from digrams
+        
     def frequencies_to_probabilities(freqs:torch.Tensor)->torch.Tensor:
         float_t = freqs.to(torch.float32)
         return float_t / float_t.sum(1, keepdim=True)
 
     N = load_frequencies(words)
     P = frequencies_to_probabilities(N)
-    return N, P, frequencies_to_probabilities, load_frequencies
+    return N, P, create_bigrams, frequencies_to_probabilities, load_frequencies
 
 
 @app.cell(hide_code=True)
@@ -137,10 +143,11 @@ def generate_random_name(itos, torch):
 @app.cell
 def likelihood(P, stoi, torch, words):
     # display probabilities of the bigrams
-    def _():
-        log_likelihood = 0
+    def log_likelihood( vocabulary):
+        one_word = True if len(vocabulary) == 1 else 0
+        ll = 0
         count=0
-        for word in words:
+        for word in vocabulary:
             w0 = '.' + word
             w1 = word + '.'
             digrams = zip(w0,w1 )
@@ -149,18 +156,67 @@ def likelihood(P, stoi, torch, words):
                 ix2 =stoi[d[1]]
                 prob = P[ix1,ix2]
                 log_prob = torch.log(prob)
-                log_likelihood += log_prob
+                ll += log_prob
                 count +=1
-
-                #print(f"{d[0]}{d[1]} {prob:.4f}")
-        print(f"Negative log likelihood {-log_likelihood/count}")
-    _()
-    return
+                if one_word:
+                    print(f"{d[0]}{d[1]} {prob:.4f} {log_prob:.4f}")
+        print(f"Negative log likelihood {-ll/count}")
+    log_likelihood(words)
+    log_likelihood(["andrej"])
+    return (log_likelihood,)
 
 
 @app.cell
 def _(mo):
-    mo.md(r""" """)
+    mo.md(r"""# Neural Network Digram LLM""")
+    return
+
+
+@app.cell
+def smooth_model(N, frequencies_to_probabilities):
+
+    # smooth the probability distribution
+    Ps = frequencies_to_probabilities(N+1)
+
+    return (Ps,)
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""## Create the training set""")
+    return
+
+
+@app.cell
+def create_training_set(create_bigrams, stoi, torch, words):
+    #def create_training_set(words:list[string])->tuple(torch.tensor, torch.tensor):
+    def create_training_set(words):
+        xs = []
+        ys = []
+        for bigram in create_bigrams(words):
+            idx1 = stoi[bigram[0]]
+            idx2 = stoi[bigram[1]]
+            xs.append(idx1)
+            ys.append(idx2)
+        return torch.tensor(xs), torch.tensor(ys)
+
+    xs, yx = create_training_set(words)
+    xs[:30],yx[:30]
+    return create_training_set, xs, yx
+
+
+@app.cell
+def _(F, torch, xs):
+    _xenc = F.one_hot(xs[:5], num_classes=27).float()
+    W = torch.rand((27,27))  
+    (_xenc @ W).exp()
+    return (W,)
+
+
+@app.cell
+def _(xs):
+    xs.nelement()
+
     return
 
 
@@ -168,6 +224,9 @@ def _(mo):
 def torch_operations(mo, torch):
     z = torch.zeros((3,2), dtype=torch.int32)
     r =  torch.randint(0,10, (3,2), dtype=torch.int32)
+    _xs = torch.arange(3)
+    _ys = torch.tensor([0,1,0])
+
     mo.md(
         rf"""
         # PyTorch operations
@@ -194,6 +253,12 @@ def torch_operations(mo, torch):
         # element at row 0 , column 1
         >>> r[0,1]
         {r[0,1]}
+        # pluck from various position
+        >>> xs = torch.arange(2)
+        {_xs}
+        >>> ys = torch.tensor([0,1,0])
+        >>> r[xs,ys]
+        {r[_xs,_ys ]}
         ```
 
         ## Aggregation
@@ -249,7 +314,17 @@ def _(itos):
 
 
 @app.cell
-def _():
+def _(torch):
+    torch.tensor([0,1,0
+                ])
+    return
+
+
+@app.cell
+def _(r, torch):
+    _xs = torch.arange(3)
+    _ys = torch.tensor([0,1,0])
+    r[_xs,_ys]
     return
 
 
