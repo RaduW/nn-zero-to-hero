@@ -22,15 +22,6 @@ def load_words():
 
     itos = {idx:s for idx,s in enumerate(letters)}
     stoi = {s:idx for idx,s in enumerate(letters)}
-    # def itos(idx:int): 
-    #     return letters[idx]
-
-    # def stoi(s: str):
-    #     if len(s) != 1:
-    #         raise ValueError(f"invalid param passed to stoi expecting string of lenght 1, got : {s}")
-    #     if s == '.':
-    #         return 0
-    #     return ord(s)-ord('a')+1
     return itos, letters, stoi, words
 
 
@@ -50,7 +41,7 @@ def load_frequencies(stoi, torch, words):
             w1 = word + '.'
             digrams = zip(w0,w1 )
             yield from digrams
-        
+
     def frequencies_to_probabilities(freqs:torch.Tensor)->torch.Tensor:
         float_t = freqs.to(torch.float32)
         return float_t / float_t.sum(1, keepdim=True)
@@ -174,10 +165,8 @@ def _(mo):
 
 @app.cell
 def smooth_model(N, frequencies_to_probabilities):
-
     # smooth the probability distribution
     Ps = frequencies_to_probabilities(N+1)
-
     return (Ps,)
 
 
@@ -206,17 +195,96 @@ def create_training_set(create_bigrams, stoi, torch, words):
 
 
 @app.cell
-def _(F, torch, xs):
-    _xenc = F.one_hot(xs[:5], num_classes=27).float()
-    W = torch.rand((27,27))  
-    (_xenc @ W).exp()
+def _(xs):
+    repr(xs[:5])
+    return
+
+
+@app.cell(hide_code=True)
+def one_hot_encoding(F, mo, xs):
+    # create a one hot encoding for the first 5 examples
+    _xenc = F.one_hot(xs[:5], num_classes=27)
+    # it will create 5 rows of 27 
+
+    mo.md(
+        rf"""
+        ```python
+        >>> xs[:5]
+        {xs[:5]}
+        >>> xenc = F.one_hot(xs[:5], num_classes=27)
+        {_xenc}
+        ```
+        """
+    )
+    return
+
+
+@app.cell
+def _(F, plt, xs):
+    #let's see the 5 hot ecnoded examples as an image
+    _xenc = F.one_hot(xs[:5], num_classes=27)
+    plt.imshow(_xenc)
+    return
+
+
+@app.cell
+def _(torch):
+    # create the neurons weights 
+    # we have 27 inputs ( 1 hot encoding of 27 values)
+    # we have 27 outputs ( each output will become a probability distribution for the next token)
+    _g = torch.Generator().manual_seed(2147483647)
+    W = torch.rand((27,27), generator=_g)  
     return (W,)
 
 
 @app.cell
-def _(xs):
-    xs.nelement()
+def _(F, W, xs):
+    # using one hot encoding you can effectively select a rows from a matrix
+    # create one hot encoded vectors for the first two token ids
+    _xenc = F.one_hot(xs[:2], num_classes=27).float()
 
+    # select the rows for the first two examples
+    _xenc @ W
+
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        rf"""
+        ### Interpretation
+
+        $W$ is a $27\times27$ matrix.
+
+        `X = F.one_hot(xs[i])` gives us the a one hot vector for training sample`i` and:
+
+        $$
+        X @ W ~~~~~~~~(1)
+        $$
+
+        selects the $xs[i]$ th row of $W$.
+
+        We interpret the row as the $log(count)$ of the next token.
+        """
+    )
+    return
+
+
+@app.cell
+def _(W):
+    W
+    return
+
+
+@app.cell
+def _(F, W, torch):
+    F.one_hot(torch.tensor([1,2]),num_classes=27).float()@W
+    return
+
+
+@app.cell
+def _():
     return
 
 
